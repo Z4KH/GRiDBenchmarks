@@ -1,7 +1,7 @@
 /*
  * This timing code is based on the benchmarking code as written in the Pinocchio repository
- * clang++-12 -std=c++11 -o timePinocchio.exe timePinocchio.cpp -O3 -DPINOCCHIO_URDFDOM_TYPEDEF_SHARED_PTR -DPINOCCHIO_WITH_URDFDOM -lboost_system -lpinocchio -lurdfdom_model -lpthread -ldl
- * eample usage: timePinocchio.exe urdfs/atlas.urdf
+ * clang++ -std=c++11 timePinocchio.cpp -o timePinocchio -O3 $(pkg-config --cflags --libs pinocchio cppadcg) 
+ * example usage: ./timePinocchio.exe urdfs/atlas.urdf
  */
 #include "util/experiment_helpers.h" // include constants and other experiment consistency helpers
 #include "ReusableThreads/ReusableThreads.h" // multi-threading wrapper
@@ -12,19 +12,16 @@
 #include "pinocchio/algorithm/centroidal.hpp"
 #include "pinocchio/algorithm/cholesky.hpp"
 #include "pinocchio/algorithm/jacobian.hpp"
-#include "pinocchio/algorithm/crba.hpp"
-#include "pinocchio/algorithm/aba.hpp"
 #include "pinocchio/algorithm/rnea.hpp"
 #include "pinocchio/algorithm/kinematics-derivatives.hpp"
 #include "pinocchio/algorithm/rnea-derivatives.hpp"
-#include "pinocchio/algorithm/aba-derivatives.hpp"
 #include "pinocchio/algorithm/compute-all-terms.hpp"
 
 #include "pinocchio/codegen/cppadcg.hpp"
 #include "pinocchio/codegen/code-generator-algo.hpp"
 
 #include "pinocchio/parsers/urdf.hpp"
-#include "pinocchio/parsers/sample-models.hpp"
+#include "pinocchio/multibody/sample-models.hpp"
 
 #include "pinocchio/container/aligned-vector.hpp"
 
@@ -38,8 +35,8 @@ using namespace pinocchio;
 
 template<typename T>
 void inverseDynamicsThreaded_codegen_inner(CodeGenRNEA<T> *rnea_code_gen, int nq, int nv, \
-                                           Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, int tid, int kStart, int kMax){
-    Matrix<T, Dynamic, 1> zeros = Matrix<T, Dynamic, 1>::Zero(nv);
+                                           Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, int tid, int kStart, int kMax){
+    Matrix<T, Eigen::Dynamic, 1> zeros = Matrix<T, Eigen::Dynamic, 1>::Zero(nv);
     for(int k = kStart; k < kMax; k++){
         rnea_code_gen->evalFunction(qs[k],qds[k],zeros);
     }
@@ -47,7 +44,7 @@ void inverseDynamicsThreaded_codegen_inner(CodeGenRNEA<T> *rnea_code_gen, int nq
 
 template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
 void inverseDynamicsThreaded_codegen(CodeGenRNEA<T> **rnea_code_gen_arr, int nq, int nv, \
-                                     Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, ReusableThreads<NUM_THREADS> *threads){
+                                     Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, ReusableThreads<NUM_THREADS> *threads){
         for (int tid = 0; tid < NUM_THREADS; tid++){
             int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
             if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
@@ -58,14 +55,14 @@ void inverseDynamicsThreaded_codegen(CodeGenRNEA<T> **rnea_code_gen_arr, int nq,
 }
 
 template<typename T>
-void minvThreaded_codegen_inner(CodeGenMinv<T> *minv_code_gen, int nq, int nv, Matrix<T, Dynamic, 1> *qs, int tid, int kStart, int kMax){
+void minvThreaded_codegen_inner(CodeGenMinv<T> *minv_code_gen, int nq, int nv, Matrix<T, Eigen::Dynamic, 1> *qs, int tid, int kStart, int kMax){
     for(int k = kStart; k < kMax; k++){
         minv_code_gen->evalFunction(qs[k]);
     }
 }
 
 template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
-void minvThreaded_codegen(CodeGenMinv<T> **minv_code_gen_arr, int nq, int nv, Matrix<T, Dynamic, 1> *qs, ReusableThreads<NUM_THREADS> *threads){
+void minvThreaded_codegen(CodeGenMinv<T> **minv_code_gen_arr, int nq, int nv, Matrix<T, Eigen::Dynamic, 1> *qs, ReusableThreads<NUM_THREADS> *threads){
         for (int tid = 0; tid < NUM_THREADS; tid++){
             int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
             if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
@@ -74,40 +71,40 @@ void minvThreaded_codegen(CodeGenMinv<T> **minv_code_gen_arr, int nq, int nv, Ma
         threads->sync();
 }
 
-template<typename T>
-void forwardDynamicsThreaded_codegen_inner(CodeGenMinv<T> *minv_code_gen, CodeGenRNEA<T> *rnea_code_gen, int nq, int nv, \
-                                           Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, Matrix<T, Dynamic, 1> *qdds, \
-                                           Matrix<T, Dynamic, 1> *us, int tid, int kStart, int kMax){
-    Matrix<T, Dynamic, 1> zeros = Matrix<T, Dynamic, 1>::Zero(nv);
-    for(int k = kStart; k < kMax; k++){
-        minv_code_gen->evalFunction(qs[k]);
-        minv_code_gen->Minv.template triangularView<Eigen::StrictlyLower>() = 
-            minv_code_gen->Minv.transpose().template triangularView<Eigen::StrictlyLower>();
-        rnea_code_gen->evalFunction(qs[k],qds[k],zeros);
-        qdds[k].noalias() = minv_code_gen->Minv*(us[k] - rnea_code_gen->res);
-    }
-}
+// template<typename T>
+// void forwardDynamicsThreaded_codegen_inner(CodeGenMinv<T> *minv_code_gen, CodeGenRNEA<T> *rnea_code_gen, int nq, int nv, \
+//                                            Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, Matrix<T, Eigen::Dynamic, 1> *qdds, \
+//                                            Matrix<T, Eigen::Dynamic, 1> *us, int tid, int kStart, int kMax){
+//     Matrix<T, Eigen::Dynamic, 1> zeros = Matrix<T, Eigen::Dynamic, 1>::Zero(nv);
+//     for(int k = kStart; k < kMax; k++){
+//         minv_code_gen->evalFunction(qs[k]);
+//         minv_code_gen->Minv.template triangularView<Eigen::StrictlyLower>() = 
+//             minv_code_gen->Minv.transpose().template triangularView<Eigen::StrictlyLower>();
+//         rnea_code_gen->evalFunction(qs[k],qds[k],zeros);
+//         qdds[k].noalias() = minv_code_gen->Minv*(us[k] - rnea_code_gen->res);
+//     }
+// }
 
-template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
-void forwardDynamicsThreaded_codegen(CodeGenMinv<T> **minv_code_gen_arr, CodeGenRNEA<T> **rnea_code_gen_arr, int nq, int nv, \
-                                     Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, Matrix<T, Dynamic, 1> *qdds, \
-                                     Matrix<T, Dynamic, 1> *us, ReusableThreads<NUM_THREADS> *threads){
-        for (int tid = 0; tid < NUM_THREADS; tid++){
-            int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
-            if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
-            threads->addTask(tid, &forwardDynamicsThreaded_codegen_inner<T>, std::ref(minv_code_gen_arr[tid]), 
-                                                                             std::ref(rnea_code_gen_arr[tid]), nq, nv,
-                                                                             std::ref(qs), std::ref(qds), std::ref(qdds), std::ref(us), 
-                                                                             tid, kStart, kMax);
-        }
-        threads->sync();
-}
+// template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
+// void forwardDynamicsThreaded_codegen(CodeGenMinv<T> **minv_code_gen_arr, CodeGenRNEA<T> **rnea_code_gen_arr, int nq, int nv, \
+//                                      Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, Matrix<T, Eigen::Dynamic, 1> *qdds, \
+//                                      Matrix<T, Eigen::Dynamic, 1> *us, ReusableThreads<NUM_THREADS> *threads){
+//         for (int tid = 0; tid < NUM_THREADS; tid++){
+//             int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
+//             if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
+//             threads->addTask(tid, &forwardDynamicsThreaded_codegen_inner<T>, std::ref(minv_code_gen_arr[tid]), 
+//                                                                              std::ref(rnea_code_gen_arr[tid]), nq, nv,
+//                                                                              std::ref(qs), std::ref(qds), std::ref(qdds), std::ref(us), 
+//                                                                              tid, kStart, kMax);
+//         }
+//         threads->sync();
+// }
 
 template<typename T>
 void inverseDynamicsGradientThreaded_codegen_inner(CodeGenRNEADerivatives<T> *rnea_derivatives_code_gen, \
-                                                   int nq, int nv, Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, \
+                                                   int nq, int nv, Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, \
                                                    int tid, int kStart, int kMax){
-    Matrix<T, Dynamic, 1> zeros = Matrix<T, Dynamic, 1>::Zero(nv);
+    Matrix<T, Eigen::Dynamic, 1> zeros = Matrix<T, Eigen::Dynamic, 1>::Zero(nv);
     for(int k = kStart; k < kMax; k++){
         rnea_derivatives_code_gen->evalFunction(qs[k],qds[k],zeros);
     }
@@ -115,7 +112,7 @@ void inverseDynamicsGradientThreaded_codegen_inner(CodeGenRNEADerivatives<T> *rn
 
 template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
 void inverseDynamicsGradientThreaded_codegen(CodeGenRNEADerivatives<T> **rnea_derivatives_code_gen_arr, \
-                                             int nq, int nv, Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, 
+                                             int nq, int nv, Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, 
                                              ReusableThreads<NUM_THREADS> *threads){
         for (int tid = 0; tid < NUM_THREADS; tid++){
             int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
@@ -126,43 +123,43 @@ void inverseDynamicsGradientThreaded_codegen(CodeGenRNEADerivatives<T> **rnea_de
         threads->sync();
 }
 
-template<typename T>
-void forwardDynamicsGradientThreaded_codegen_inner(CodeGenRNEADerivatives<T> *rnea_derivatives_code_gen, \
-                                                   CodeGenMinv<T> *minv_code_gen, CodeGenRNEA<T> *rnea_code_gen, \
-                                                   int nq, int nv, Matrix<T, Dynamic, Dynamic> *dqdd_dqs, Matrix<T, Dynamic, Dynamic> *dqdd_dvs, \
-                                                   Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, Matrix<T, Dynamic, 1> *us, \
-                                                   int tid, int kStart, int kMax){
-    Matrix<T, Dynamic, 1> zeros = Matrix<T, Dynamic, 1>::Zero(nv);
-    for(int k = kStart; k < kMax; k++){
-        minv_code_gen->evalFunction(qs[k]);
-        minv_code_gen->Minv.template triangularView<Eigen::StrictlyLower>() = 
-            minv_code_gen->Minv.transpose().template triangularView<Eigen::StrictlyLower>();
-        rnea_code_gen->evalFunction(qs[k],qds[k],zeros);
-        Matrix<T, Dynamic, 1> qdd = minv_code_gen->Minv*(us[k] - rnea_code_gen->res);
-        rnea_derivatives_code_gen->evalFunction(qs[k],qds[k],qdd);
-        dqdd_dqs[k].noalias() = -(minv_code_gen->Minv)*(rnea_derivatives_code_gen->dtau_dq);
-        dqdd_dvs[k].noalias() = -(minv_code_gen->Minv)*(rnea_derivatives_code_gen->dtau_dv);
-    }
-}
+// template<typename T>
+// void forwardDynamicsGradientThreaded_codegen_inner(CodeGenRNEADerivatives<T> *rnea_derivatives_code_gen, \
+//                                                    CodeGenMinv<T> *minv_code_gen, CodeGenRNEA<T> *rnea_code_gen, \
+//                                                    int nq, int nv, Matrix<T, Eigen::Dynamic, Eigen::Dynamic> *dqdd_dqs, Matrix<T, Eigen::Dynamic, Eigen::Dynamic> *dqdd_dvs, \
+//                                                    Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, Matrix<T, Eigen::Dynamic, 1> *us, \
+//                                                    int tid, int kStart, int kMax){
+//     Matrix<T, Eigen::Dynamic, 1> zeros = Matrix<T, Eigen::Dynamic, 1>::Zero(nv);
+//     for(int k = kStart; k < kMax; k++){
+//         minv_code_gen->evalFunction(qs[k]);
+//         minv_code_gen->Minv.template triangularView<Eigen::StrictlyLower>() = 
+//             minv_code_gen->Minv.transpose().template triangularView<Eigen::StrictlyLower>();
+//         rnea_code_gen->evalFunction(qs[k],qds[k],zeros);
+//         Matrix<T, Eigen::Dynamic, 1> qdd = minv_code_gen->Minv*(us[k] - rnea_code_gen->res);
+//         rnea_derivatives_code_gen->evalFunction(qs[k],qds[k],qdd);
+//         dqdd_dqs[k].noalias() = -(minv_code_gen->Minv)*(rnea_derivatives_code_gen->dtau_dq);
+//         dqdd_dvs[k].noalias() = -(minv_code_gen->Minv)*(rnea_derivatives_code_gen->dtau_dv);
+//     }
+// }
 
-template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
-void forwardDynamicsGradientThreaded_codegen(CodeGenRNEADerivatives<T> **rnea_derivatives_code_gen_arr, \
-                                             CodeGenMinv<T> **minv_code_gen_arr, CodeGenRNEA<T> **rnea_code_gen_arr, \
-                                             int nq, int nv, Matrix<T, Dynamic, Dynamic> *dqdd_dqs, Matrix<T, Dynamic, Dynamic> *dqdd_dvs, \
-                                             Matrix<T, Dynamic, 1> *qs, Matrix<T, Dynamic, 1> *qds, Matrix<T, Dynamic, 1> *us, \
-                                             ReusableThreads<NUM_THREADS> *threads){
-        for (int tid = 0; tid < NUM_THREADS; tid++){
-            int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
-            if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
-            threads->addTask(tid, &forwardDynamicsGradientThreaded_codegen_inner<T>, std::ref(rnea_derivatives_code_gen_arr[tid]), 
-                                                                                     std::ref(minv_code_gen_arr[tid]), 
-                                                                                     std::ref(rnea_code_gen_arr[tid]), nq, nv,
-                                                                                     std::ref(dqdd_dqs), std::ref(dqdd_dvs), 
-                                                                                     std::ref(qs), std::ref(qds), std::ref(us),
-                                                                                     tid, kStart, kMax);
-    }
-        threads->sync();
-}
+// template<typename T, int NUM_THREADS, int NUM_TIME_STEPS>
+// void forwardDynamicsGradientThreaded_codegen(CodeGenRNEADerivatives<T> **rnea_derivatives_code_gen_arr, \
+//                                              CodeGenMinv<T> **minv_code_gen_arr, CodeGenRNEA<T> **rnea_code_gen_arr, \
+//                                              int nq, int nv, Matrix<T, Eigen::Dynamic, Eigen::Dynamic> *dqdd_dqs, Matrix<T, Eigen::Dynamic, Eigen::Dynamic> *dqdd_dvs, \
+//                                              Matrix<T, Eigen::Dynamic, 1> *qs, Matrix<T, Eigen::Dynamic, 1> *qds, Matrix<T, Eigen::Dynamic, 1> *us, \
+//                                              ReusableThreads<NUM_THREADS> *threads){
+//         for (int tid = 0; tid < NUM_THREADS; tid++){
+//             int kStart = NUM_TIME_STEPS/NUM_THREADS*tid; int kMax = NUM_TIME_STEPS/NUM_THREADS*(tid+1); 
+//             if(tid == NUM_THREADS-1){kMax = NUM_TIME_STEPS;} 
+//             threads->addTask(tid, &forwardDynamicsGradientThreaded_codegen_inner<T>, std::ref(rnea_derivatives_code_gen_arr[tid]), 
+//                                                                                      std::ref(minv_code_gen_arr[tid]), 
+//                                                                                      std::ref(rnea_code_gen_arr[tid]), nq, nv,
+//                                                                                      std::ref(dqdd_dqs), std::ref(dqdd_dvs), 
+//                                                                                      std::ref(qs), std::ref(qds), std::ref(us),
+//                                                                                      tid, kStart, kMax);
+//     }
+//         threads->sync();
+// }
 
 template<typename T, int TEST_ITERS, int NUM_THREADS, int NUM_TIME_STEPS>
 void test(std::string urdf_filepath){
@@ -170,8 +167,8 @@ void test(std::string urdf_filepath){
     struct timespec start, end;
 
     // Matrix typedefs
-    typedef Matrix<T, Dynamic, Dynamic> MatrixXT;
-    typedef Matrix<T, Dynamic, 1> VectorXT;
+    typedef Matrix<T, Eigen::Dynamic, Eigen::Dynamic> MatrixXT;
+    typedef Matrix<T, Eigen::Dynamic, 1> VectorXT;
 
     // Import URDF model and prepare pinnochio
     Model model;
@@ -279,16 +276,16 @@ void test(std::string urdf_filepath){
             clock_gettime(CLOCK_MONOTONIC,&end);
             printf("Minv codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
 
-            clock_gettime(CLOCK_MONOTONIC,&start);
-            for(int i = 0; i < TEST_ITERS; i++){
-                minv_code_gen.evalFunction(qs[0]);
-                minv_code_gen.Minv.template triangularView<Eigen::StrictlyLower>() = 
-                    minv_code_gen.Minv.transpose().template triangularView<Eigen::StrictlyLower>();
-                rnea_code_gen.evalFunction(qs[0],qds[0],zeros);
-                qdds[0].noalias() = minv_code_gen.Minv*(us[0] - rnea_code_gen.res);
-            }
-            clock_gettime(CLOCK_MONOTONIC,&end);
-            printf("FD codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
+            // clock_gettime(CLOCK_MONOTONIC,&start);
+            // for(int i = 0; i < TEST_ITERS; i++){
+            //     minv_code_gen.evalFunction(qs[0]);
+            //     minv_code_gen.Minv.template triangularView<Eigen::StrictlyLower>() = 
+            //         minv_code_gen.Minv.transpose().template triangularView<Eigen::StrictlyLower>();
+            //     rnea_code_gen.evalFunction(qs[0],qds[0],zeros);
+            //     qdds[0].noalias() = minv_code_gen.Minv*(us[0] - rnea_code_gen.res);
+            // }
+            // clock_gettime(CLOCK_MONOTONIC,&end);
+            // printf("FD codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
 
             clock_gettime(CLOCK_MONOTONIC,&start);
             for(int i = 0; i < TEST_ITERS; i++){
@@ -297,19 +294,19 @@ void test(std::string urdf_filepath){
             clock_gettime(CLOCK_MONOTONIC,&end);
             printf("ID_DU codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
 
-            clock_gettime(CLOCK_MONOTONIC,&start);
-            for(int i = 0; i < TEST_ITERS; i++){
-                minv_code_gen.evalFunction(qs[0]);
-                minv_code_gen.Minv.template triangularView<Eigen::StrictlyLower>() = 
-                    minv_code_gen.Minv.transpose().template triangularView<Eigen::StrictlyLower>();
-                rnea_code_gen.evalFunction(qs[0],qds[0],zeros);
-                VectorXT qdd = minv_code_gen.Minv*(us[0] - rnea_code_gen.res);
-                rnea_derivatives_code_gen.evalFunction(qs[0],qds[0],qdd);
-                dqdd_dqs[0].noalias() = -minv_code_gen.Minv*rnea_derivatives_code_gen.dtau_dq;
-                dqdd_dvs[0].noalias() = -minv_code_gen.Minv*rnea_derivatives_code_gen.dtau_dv;
-            }
-            clock_gettime(CLOCK_MONOTONIC,&end);
-            printf("FD_DU codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
+            // clock_gettime(CLOCK_MONOTONIC,&start);
+            // for(int i = 0; i < TEST_ITERS; i++){
+            //     minv_code_gen.evalFunction(qs[0]);
+            //     minv_code_gen.Minv.template triangularView<Eigen::StrictlyLower>() = 
+            //         minv_code_gen.Minv.transpose().template triangularView<Eigen::StrictlyLower>();
+            //     rnea_code_gen.evalFunction(qs[0],qds[0],zeros);
+            //     VectorXT qdd = minv_code_gen.Minv*(us[0] - rnea_code_gen.res);
+            //     rnea_derivatives_code_gen.evalFunction(qs[0],qds[0],qdd);
+            //     dqdd_dqs[0].noalias() = -minv_code_gen.Minv*rnea_derivatives_code_gen.dtau_dq;
+            //     dqdd_dvs[0].noalias() = -minv_code_gen.Minv*rnea_derivatives_code_gen.dtau_dv;
+            // }
+            // clock_gettime(CLOCK_MONOTONIC,&end);
+            // printf("FD_DU codegen %fus\n",time_delta_us_timespec(start,end)/static_cast<double>(TEST_ITERS));
 
         }
         // multi call with threadPools
@@ -336,15 +333,15 @@ void test(std::string urdf_filepath){
             printf("[N:%d]: Minv codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
             printf("----------------------------------------\n");
 
-            for(int iter = 0; iter < TEST_ITERS; iter++){
-                clock_gettime(CLOCK_MONOTONIC,&start);
-                forwardDynamicsThreaded_codegen<T,NUM_THREADS,NUM_TIME_STEPS>(minv_code_gen_arr,rnea_code_gen_arr,
-                                                                              model.nq,model.nv,qs,qds,qdds,us,&threads);
-                clock_gettime(CLOCK_MONOTONIC,&end);
-                times.push_back(time_delta_us_timespec(start,end));
-            }
-            printf("[N:%d]: FD codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
-            printf("----------------------------------------\n");
+            // for(int iter = 0; iter < TEST_ITERS; iter++){
+            //     clock_gettime(CLOCK_MONOTONIC,&start);
+            //     forwardDynamicsThreaded_codegen<T,NUM_THREADS,NUM_TIME_STEPS>(minv_code_gen_arr,rnea_code_gen_arr,
+            //                                                                   model.nq,model.nv,qs,qds,qdds,us,&threads);
+            //     clock_gettime(CLOCK_MONOTONIC,&end);
+            //     times.push_back(time_delta_us_timespec(start,end));
+            // }
+            // printf("[N:%d]: FD codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
+            // printf("----------------------------------------\n");
 
             for(int iter = 0; iter < TEST_ITERS; iter++){
                 clock_gettime(CLOCK_MONOTONIC,&start);
@@ -356,17 +353,17 @@ void test(std::string urdf_filepath){
             printf("[N:%d]: ID_DU codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
             printf("----------------------------------------\n");
 
-            for(int iter = 0; iter < TEST_ITERS; iter++){
-                clock_gettime(CLOCK_MONOTONIC,&start);
-                forwardDynamicsGradientThreaded_codegen<T,NUM_THREADS,NUM_TIME_STEPS>(rnea_derivatives_code_gen_arr,
-                                                                                    minv_code_gen_arr,rnea_code_gen_arr,
-                                                                                    model.nq,model.nv,dqdd_dqs,dqdd_dvs,
-                                                                                    qs,qds,us,&threads);
-                clock_gettime(CLOCK_MONOTONIC,&end);
-                times.push_back(time_delta_us_timespec(start,end));
-            }
-            printf("[N:%d]: FD_DU codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
-            printf("----------------------------------------\n");
+            // for(int iter = 0; iter < TEST_ITERS; iter++){
+            //     clock_gettime(CLOCK_MONOTONIC,&start);
+            //     forwardDynamicsGradientThreaded_codegen<T,NUM_THREADS,NUM_TIME_STEPS>(rnea_derivatives_code_gen_arr,
+            //                                                                         minv_code_gen_arr,rnea_code_gen_arr,
+            //                                                                         model.nq,model.nv,dqdd_dqs,dqdd_dvs,
+            //                                                                         qs,qds,us,&threads);
+            //     clock_gettime(CLOCK_MONOTONIC,&end);
+            //     times.push_back(time_delta_us_timespec(start,end));
+            // }
+            // printf("[N:%d]: FD_DU codegen: ",NUM_TIME_STEPS); printStats(&times); times.clear();
+            // printf("----------------------------------------\n");
         }
     #endif
 
@@ -390,7 +387,6 @@ int main(int argc, const char ** argv){
     std::string urdf_filepath;
     if(argc>1){urdf_filepath = argv[1];}
     else{printf("Usage is: urdf_filepath\n"); return 1;}
-
     run_all_tests<float,TEST_ITERS_GLOBAL,CPU_THREADS_GLOBAL>(urdf_filepath);
     return 0;
 }

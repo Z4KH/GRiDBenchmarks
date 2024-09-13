@@ -5,20 +5,23 @@ import GRiD.GRiDCodeGenerator.GRiDCodeGenerator as GRiDCodeGenerator
 import subprocess
 import sys
 
+
 def main():
     inputs = util.parseInputs(NO_ARG_OPTION = True)
     if not inputs is None:
-        URDF_PATH, DEBUG_MODE, FILE_NAMESPACE_NAME = inputs
+        URDF_PATH, DEBUG_MODE, FILE_NAMESPACE_NAME, FLOATING_BASE = inputs
         parser = URDFParser()
-        robot = parser.parse(URDF_PATH)
+        robot = parser.parse(URDF_PATH, floating_base = FLOATING_BASE)
 
         util.validateRobot(robot, NO_ARG_OPTION = True)
 
         codegen = GRiDCodeGenerator(robot, DEBUG_MODE, True, FILE_NAMESPACE = FILE_NAMESPACE_NAME)
+        if FLOATING_BASE: include_homogenous_transforms = False
+        else: include_homogenous_transforms = True
         print("-----------------")
         print("Generating GRiD.cuh")
         print("-----------------")
-        codegen.gen_all_code()
+        codegen.gen_all_code(include_homogenous_transforms = include_homogenous_transforms)
         print("New code generated and saved to grid.cuh!")
 
     print("-----------------")

@@ -1,10 +1,12 @@
+# Running this code with floating base is still under development
+
 #!/usr/bin/python3
 import GRiD.util as util
 import subprocess
 import sys
 
 def main():
-    URDF_PATH, DEBUG_MODE, _ = util.parseInputs()
+    URDF_PATH, DEBUG_MODE, FILE_NAMESPACE_NAME, FLOATING_BASE = util.parseInputs()
     util.validateFile(URDF_PATH)
 
     if util.fileExists("timePinocchio.exe"):
@@ -16,12 +18,24 @@ def main():
         print("Compiling timePinocchio")
         print("   this may take a few minutes")
         print("-----------------")
-        result = subprocess.run( \
-            ["clang++-12", "-std=c++11", "-o", "timePinocchio.exe", "timePinocchio.cpp", "-O3", \
-             "-DPINOCCHIO_URDFDOM_TYPEDEF_SHARED_PTR", "-DPINOCCHIO_WITH_URDFDOM", \
-             "-lboost_system", "-lpinocchio", "-lurdfdom_model", "-lpthread", "-ldl"], \
-            capture_output=True, text=True \
-        )
+        
+        # Run pkg-config to get the flags and libraries
+        pkg_config_command = ['pkg-config', '--cflags', '--libs', 'pinocchio', 'cppadcg']
+        result = pkg_config_result = subprocess.run(pkg_config_command, capture_output=True, text=True, check=True)
+
+        if result.stderr:
+            print("Compilation errors follow:")
+            print(result.stderr)
+            exit()
+
+        # Construct the full clang++ command
+        clang_command = [
+            'clang++', '-std=c++11', 'timePinocchio.cpp', '-o', 'timePinocchio.exe', '-O3'
+        ] + pkg_config_result.stdout.strip().split()
+
+        # Run clang++ with the constructed command
+        result = subprocess.run(clang_command, capture_output=True, text=True)
+
         if result.stderr:
             print("Compilation errors follow:")
             print(result.stderr)
