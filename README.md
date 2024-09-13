@@ -108,14 +108,15 @@ export C_INCLUDE_PATH=/opt/openrobots/include:$C_INCLUDE_PATH
 export CPLUS_INCLUDE_PATH=/opt/openrobots/include:$CPLUS_INCLUDE_PATH
 ```
 ### Download and Install CPP AD (Codegen)
-**First [CPP AD](https://coin-or.github.io/CppAD/doc/install.htm) (v2020.3 for Codegen)**
+**First [CPP AD](https://coin-or.github.io/CppAD/doc/install.htm) (Need Version >= 2024)**
 ```
 cd ~/Downloads
 git clone https://github.com/coin-or/CppAD.git
 cd CppAD
-git fetch && git checkout -q 83e249ec7819224138f35aaba564e2b977fb0078
+git fetch && git checkout -q 70ba0d2
 mkdir build && cd build
 cmake ..
+make
 sudo make install
 ```
 **Then [CPP AD-Codegen](https://github.com/joaoleal/CppADCodeGen)**
@@ -123,19 +124,20 @@ sudo make install
 cd ~/Downloads
 git clone https://github.com/joaoleal/CppADCodeGen.git CppADCodeGen
 cd CppADCodeGen && mkdir build && cd build
-cmake .. -DLLVM_VERSION=12
+cmake ..
+make
 sudo make install
 ```
 ### Download and Install the Pinocchio CPU Rigid Body Dynamics Library
 *Note: if you would like to build the python interface swap ```-DBUILD_PYTHON_INTERFACE=OFF``` for ```-DPYTHON_EXECUTABLE=/usr/bin/python3```*
 ```
 cd ~/Downloads
-git clone --recursive https://github.com/stack-of-tasks/pinocchio
-cd pinocchio
-git checkout -b pinocchio3-preview origin/pinocchio3-preview 
+Go to https://github.com/stack-of-tasks/pinocchio/releases and download pinocchio-3.2.0.tar.gz
+tar -xzvf pinocchio-3.2.0.tar.gz
+cd pinocchio-3.2.0
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_WITH_AUTODIFF_SUPPORT=ON -DBUILD_WITH_CODEGEN_SUPPORT=ON -DCMAKE_CXX_COMPILER=clang++-12 -DBUILD_PYTHON_INTERFACE=OFF
-make -j4
+cmake -DBUILD_PYTHON_INTERFACE=OFF ..
+make
 sudo make install
 ```
 **Add the following to ```~/.bashrc```**
@@ -147,3 +149,6 @@ export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 export PYTHONPATH=/usr/local/lib/python3.8/site-packages:$PYTHONPATH
 export CMAKE_PREFIX_PATH=/usr/local:$CMAKE_PREFIX_PATH
 ```
+
+
+
