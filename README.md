@@ -129,10 +129,10 @@ make
 sudo make install
 ```
 ### Download and Install the Pinocchio CPU Rigid Body Dynamics Library
+*Go to https://github.com/stack-of-tasks/pinocchio/releases and download pinocchio-3.2.0.tar.gz*
 *Note: if you would like to build the python interface swap ```-DBUILD_PYTHON_INTERFACE=OFF``` for ```-DPYTHON_EXECUTABLE=/usr/bin/python3```*
 ```
 cd ~/Downloads
-Go to https://github.com/stack-of-tasks/pinocchio/releases and download pinocchio-3.2.0.tar.gz
 tar -xzvf pinocchio-3.2.0.tar.gz
 cd pinocchio-3.2.0
 mkdir build && cd build
