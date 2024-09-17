@@ -147,7 +147,7 @@ void test(int NUM_TIMESTEPS, cudaStream_t *streams, grid::robotModel<T> *d_robot
 }
 
 template<typename T, int TEST_ITERS>
-void run_all_tests(){
+void run_all_tests(bool floating_base){
 	// allocate memory for max of what we need
 	const int MAX_TIMESTEPS = 256;
 	cudaStream_t *streams = grid::init_grid<T>();
@@ -156,16 +156,19 @@ void run_all_tests(){
 
 	// load q,qd,u
 	for(int k = 0; k < MAX_TIMESTEPS; k++){
+		for (int ind = 0; ind < grid::NUM_JOINTS + floating_base; ind++) {
+			T val = getRand<double>();
+			hd_data->h_q_qd_u[k*(3*grid::NUM_JOINTS+floating_base) + ind] = val;
+			hd_data->h_q_qd[k*(2*grid::NUM_JOINTS+floating_base) + ind] = val;
+			hd_data->h_q[k*(grid::NUM_JOINTS+floating_base) + ind] = val;
+		}
 		for(int ind = 0; ind < grid::NUM_JOINTS; ind++){
 			// get values
-			T val1 = getRand<double>(); T val2 = getRand<double>(); T val3 = getRand<double>();
-			hd_data->h_q_qd_u[k*3*grid::NUM_JOINTS + ind] = val1;
-			hd_data->h_q_qd_u[k*3*grid::NUM_JOINTS + grid::NUM_JOINTS + ind] = val2;
-			hd_data->h_q_qd_u[k*3*grid::NUM_JOINTS + 2*grid::NUM_JOINTS + ind] = val3;
+			T val2 = getRand<double>(); T val3 = getRand<double>();
+			hd_data->h_q_qd_u[k*(3*grid::NUM_JOINTS+floating_base) + grid::NUM_JOINTS + ind + floating_base] = val2;
+			hd_data->h_q_qd_u[k*(3*grid::NUM_JOINTS+floating_base) + 2*grid::NUM_JOINTS + ind + floating_base] = val3;
 			// load into alternate memory sizes
-			hd_data->h_q_qd[k*2*grid::NUM_JOINTS + ind] = val1;
-			hd_data->h_q_qd[k*2*grid::NUM_JOINTS + grid::NUM_JOINTS + ind] = val2;
-			hd_data->h_q[k*grid::NUM_JOINTS + ind] = val1;
+			hd_data->h_q_qd[k*(2*grid::NUM_JOINTS+floating_base) + grid::NUM_JOINTS + ind + floating_base] = val2;
 		}
 	}
 	// copy values onto the GPU as default values (we will do more transfers later but this ensures things are initialized)
@@ -188,6 +191,9 @@ void run_all_tests(){
 	grid::close_grid<T>(streams,d_robotModel,hd_data);
 }
 
-int main(void){
-	run_all_tests<float,TEST_ITERS_GLOBAL>(); return 0;
+int main(int argc, const char **argv){
+	bool floating_base = false;
+	if (argc > 1 && argv[1][0] == 'T') {floating_base = true; printf("Floating Base = True\n");}
+	else {printf("Floating Base = False\n");}
+	run_all_tests<float,TEST_ITERS_GLOBAL>(floating_base); return 0;
 }

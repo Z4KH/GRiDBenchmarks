@@ -1,7 +1,7 @@
 /*
  * This timing code is based on the benchmarking code as written in the Pinocchio repository
  * clang++ -std=c++11 timePinocchio.cpp -o timePinocchio -O3 $(pkg-config --cflags --libs pinocchio cppadcg) 
- * example usage: ./timePinocchio.exe urdfs/atlas.urdf
+ * example usage: ./timePinocchio.exe urdfs/atlas.urdf True
  */
 #include "util/experiment_helpers.h" // include constants and other experiment consistency helpers
 #include "ReusableThreads/ReusableThreads.h" // multi-threading wrapper
@@ -162,7 +162,7 @@ void inverseDynamicsGradientThreaded_codegen(CodeGenRNEADerivatives<T> **rnea_de
 // }
 
 template<typename T, int TEST_ITERS, int NUM_THREADS, int NUM_TIME_STEPS>
-void test(std::string urdf_filepath){
+void test(std::string urdf_filepath, bool floating_base){
     // Setup timer
     struct timespec start, end;
 
@@ -172,7 +172,8 @@ void test(std::string urdf_filepath){
 
     // Import URDF model and prepare pinnochio
     Model model;
-    pinocchio::urdf::buildModel(urdf_filepath,model);
+    if (floating_base) {pinocchio::urdf::buildModel(urdf_filepath,pinocchio::JointModelFreeFlyer(), model);}
+    else {pinocchio::urdf::buildModel(urdf_filepath,model);}
     // model.gravity.setZero();
     model.gravity.linear(Eigen::Vector3d(0,0,-9.81));
     Data datas[NUM_THREADS]; 
@@ -226,7 +227,8 @@ void test(std::string urdf_filepath){
         us[i] = VectorXT::Zero(model.nv);
         dqdd_dqs[i] = MatrixXT::Zero(model.nv,model.nq);
         dqdd_dvs[i] = MatrixXT::Zero(model.nv,model.nv);
-        for(int j = 0; j < model.nq; j++){qs[i][j] = getRand<T>(); qds[i][j] = getRand<T>(); us[i][j] = getRand<T>();}
+        for(int j = 0; j < model.nq; j++){qs[i][j] = getRand<T>();} // Floating Base has different number of qs and qds
+        for(int j = 0; j < model.nv; j++){qds[i][j] = getRand<T>(); us[i][j] = getRand<T>();}
     }
 
     #if TEST_FOR_EQUIVALENCE
@@ -372,21 +374,26 @@ void test(std::string urdf_filepath){
 }
 
 template<typename T, int TEST_ITERS, int CPU_THREADS>
-void run_all_tests(std::string urdf_filepath){
-    test<T,10*TEST_ITERS,CPU_THREADS,1>(urdf_filepath);
+void run_all_tests(std::string urdf_filepath, bool floating_base){
+    test<T,10*TEST_ITERS,CPU_THREADS,1>(urdf_filepath, floating_base);
     #if !TEST_FOR_EQUIVALENCE
-        test<T,TEST_ITERS,CPU_THREADS,16>(urdf_filepath);
-        test<T,TEST_ITERS,CPU_THREADS,32>(urdf_filepath);
-        test<T,TEST_ITERS,CPU_THREADS,64>(urdf_filepath);
-        test<T,TEST_ITERS,CPU_THREADS,128>(urdf_filepath);
-        test<T,TEST_ITERS,CPU_THREADS,256>(urdf_filepath);
+        test<T,TEST_ITERS,CPU_THREADS,16>(urdf_filepath, floating_base);
+        test<T,TEST_ITERS,CPU_THREADS,32>(urdf_filepath, floating_base);
+        test<T,TEST_ITERS,CPU_THREADS,64>(urdf_filepath, floating_base);
+        test<T,TEST_ITERS,CPU_THREADS,128>(urdf_filepath, floating_base);
+        test<T,TEST_ITERS,CPU_THREADS,256>(urdf_filepath, floating_base);
     #endif
 }
 
 int main(int argc, const char ** argv){
     std::string urdf_filepath;
-    if(argc>1){urdf_filepath = argv[1];}
-    else{printf("Usage is: urdf_filepath\n"); return 1;}
-    run_all_tests<float,TEST_ITERS_GLOBAL,CPU_THREADS_GLOBAL>(urdf_filepath);
+    bool floating_base = false;
+    if(argc>1){
+        urdf_filepath = argv[1];
+        if (argc>2 && argv[2][0] == 'T') {floating_base = true; printf("Floating Base = True\n");}
+    }
+    else{printf("Usage is: urdf_filepath floating_base\n"); return 1;}
+    if(!floating_base) {printf("Floating Base = False");}
+    run_all_tests<float,TEST_ITERS_GLOBAL,CPU_THREADS_GLOBAL>(urdf_filepath, floating_base);
     return 0;
 }

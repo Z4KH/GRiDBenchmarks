@@ -47,7 +47,7 @@ def main():
     print("This may take a few minutes....")
     print("     Outputs will show up at the end")
     print("-----------------")
-    result = subprocess.run(["./timePinocchio.exe", URDF_PATH], capture_output=True, text=True)
+    result = subprocess.run(["./timePinocchio.exe", URDF_PATH, str(FLOATING_BASE)], capture_output=True, text=True)
     if result.stderr:
         print("Runtime errors follow:")
         print(result.stderr)
